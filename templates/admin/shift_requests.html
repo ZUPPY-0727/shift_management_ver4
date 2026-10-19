@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}希望シフト確認 | シフト管理システム{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">管理者画面</p><h1>希望シフト確認</h1><p class="lead">対象月に登録された全従業員の希望を確認します。</p></div></section>
+<section class="panel filter-panel"><form method="get" class="inline-form"><div class="form-group inline-form__field"><label for="target_month">対象月</label><input id="target_month" name="target_month" type="month" value="{{ selected_month }}" required></div><button class="button button--primary" type="submit">表示する</button><a class="button button--outline" href="{{ url_for('admin.shifts', target_month=selected_month) }}">シフト案作成へ</a></form>
+{% if selected_period %}<p class="section-note">提出期限：{{ selected_period.deadline_at }}（Asia/Tokyo）</p>{% else %}<p class="section-note">この月には提出期限が設定されていません。</p>{% endif %}</section>
+<section class="panel section-block"><h2>{{ selected_month }} の登録済み希望</h2>
+{% if shift_requests %}<div class="table-wrap"><table><thead><tr><th>日付</th><th>従業員ID</th><th>氏名</th><th>雇用区分</th><th>開始</th><th>終了</th><th>備考</th></tr></thead><tbody>{% for item in shift_requests %}<tr><td>{{ item.work_date }}</td><td class="employee-id">{{ item.employee_number }}</td><td>{{ item.name }}</td><td>{{ item.employee_type }}</td><td>{{ item.start_time }}</td><td>{{ item.end_time }}</td><td class="note-cell">{{ item.note or '―' }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p class="empty-state">この月に登録された希望シフトはありません。</p>{% endif %}</section>
+{% endblock %}

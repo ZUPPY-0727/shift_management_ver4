@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}従業員情報編集 | シフト管理システム{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">管理者画面</p><h1>従業員情報編集</h1><p class="lead">従業員IDを維持したまま、登録情報を変更します。</p></div></section>
+<section class="panel settings-panel" aria-labelledby="edit-title">
+    <h2 id="edit-title"><span class="employee-id">{{ employee.employee_number }}</span> の情報</h2>
+    <p>在籍状態：{{ '在籍' if employee.employment_status == 'active' else '退職' }}。従業員IDは変更できません。</p>
+    <form method="post" class="form-stack" data-pay-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group"><label for="name">氏名</label><input id="name" name="name" value="{{ form_data.get('name', '') }}" maxlength="100" autocomplete="name" required></div>
+        <div class="form-group"><label for="employee_type">雇用区分</label><select id="employee_type" name="employee_type" required>{% for value, label in [('E','E：社員'),('P','P：パート'),('A','A：アルバイト')] %}<option value="{{ value }}" {% if form_data.get('employee_type') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><p class="field-help">雇用区分を変更しても給与形態は自動で変わりません。必要に応じて下で変更してください。</p></div>
+        <div class="form-group"><label for="pay_type">給与形態</label><select id="pay_type" name="pay_type" data-pay-type required><option value="hourly" {% if form_data.get('pay_type') == 'hourly' %}selected{% endif %}>時給制</option><option value="monthly" {% if form_data.get('pay_type') == 'monthly' %}selected{% endif %}>月給制</option></select></div>
+        <div class="form-group" data-hourly-field {% if form_data.get('pay_type') != 'hourly' %}hidden{% endif %}><label for="hourly_rate">個別時給（円・任意）</label><input id="hourly_rate" name="hourly_rate" type="number" min="1" step="1" value="{{ form_data.get('hourly_rate', '') }}" data-hourly-input {% if form_data.get('pay_type') != 'hourly' %}disabled{% endif %}><p class="field-help">空欄の場合は店舗基本時給（{{ '{:,}'.format(store_settings.base_hourly_rate) }}円）を適用します。</p></div>
+        <p class="field-help">月給制に変更すると個別時給は解除されます。時給制に戻す際、個別時給が未入力なら店舗基本時給を適用します。</p>
+        <div class="form-actions"><button class="button button--primary" type="submit">従業員情報を保存</button><a class="button button--outline" href="{{ url_for('admin.employees', status=employee.employment_status) }}">キャンセル</a></div>
+    </form>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/script.js') }}" defer></script>{% endblock %}

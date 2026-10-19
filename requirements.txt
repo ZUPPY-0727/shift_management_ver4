@@ -1,0 +1,8 @@
+# Runtime dependencies. SQLite and secrets are part of the Python standard library.
+Flask>=3.1,<4
+Werkzeug
+click
+
+# Tests (run manually by the developer).
+pytest>=8,<10
+

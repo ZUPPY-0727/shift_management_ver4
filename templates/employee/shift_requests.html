@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}希望シフト登録 | シフト管理システム{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">従業員画面</p><h1>希望シフト登録</h1><p class="lead">出勤可能な日だけを1件ずつ登録してください。</p></div></section>
+<section class="panel filter-panel"><form method="get" class="inline-form"><div class="form-group inline-form__field"><label for="target_month">対象月</label><input id="target_month" name="target_month" type="month" value="{{ selected_month }}" required></div><button class="button button--primary" type="submit">表示する</button></form>
+{% if not selected_period %}<p class="section-note">この月は提出期限が未設定のため、希望を登録できません。</p>{% elif submission_open %}<p class="section-note">受付中：{{ selected_period.deadline_at }}まで（Asia/Tokyo）</p>{% else %}<p class="section-note">受付終了：{{ selected_period.deadline_at }}（Asia/Tokyo）</p>{% endif %}</section>
+<section class="panel section-block settings-panel"><h2>{{ '希望を編集' if edit_request else '出勤可能日を登録' }}</h2>
+{% if selected_period and submission_open %}
+<form method="post" class="form-stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save"><input type="hidden" name="target_month" value="{{ selected_month }}"><input type="hidden" name="original_work_date" value="{{ form_data.get('original_work_date', '') }}">
+    <div class="form-group"><label for="work_date">勤務日</label><input id="work_date" name="work_date" type="date" value="{{ form_data.get('work_date', '') }}" {% if edit_request %}readonly{% endif %} required></div>
+    <div class="time-fields"><div class="form-group"><label for="start_time">開始時刻</label><input id="start_time" name="start_time" type="time" step="1800" value="{{ form_data.get('start_time', '') }}" required></div><div class="form-group"><label for="end_time">終了時刻</label><input id="end_time" name="end_time" type="time" step="1800" value="{{ form_data.get('end_time', '') }}" required></div></div>
+    <p class="field-help">00分または30分で入力してください。開始は終了より前とし、日付をまたぐ勤務は登録できません。</p>
+    <div class="form-group"><label for="note">備考（任意）</label><textarea id="note" name="note" rows="3" maxlength="1000">{{ form_data.get('note', '') or '' }}</textarea></div>
+    <div class="form-actions"><button class="button button--primary" type="submit">{{ '変更を保存' if edit_request else '希望を登録' }}</button>{% if edit_request %}<a class="button button--outline" href="{{ url_for('employee.shift_requests', target_month=selected_month) }}">編集をやめる</a>{% endif %}</div>
+</form>
+{% else %}<p>現在、この月の希望は追加・編集・削除できません。</p>{% endif %}</section>
+<section class="panel section-block"><h2>登録済みの希望</h2>
+{% if shift_requests %}<div class="table-wrap"><table><thead><tr><th>勤務日</th><th>開始</th><th>終了</th><th>備考</th><th>操作</th></tr></thead><tbody>{% for item in shift_requests %}<tr><td>{{ item.work_date }}</td><td>{{ item.start_time }}</td><td>{{ item.end_time }}</td><td class="note-cell">{{ item.note or '―' }}</td><td>{% if submission_open %}<div class="table-actions"><a class="button button--outline button--small" href="{{ url_for('employee.shift_requests', target_month=selected_month, edit=item.work_date) }}">編集</a><form method="post" data-confirm="この希望シフトを削除しますか？"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="target_month" value="{{ selected_month }}"><input type="hidden" name="work_date" value="{{ item.work_date }}"><button class="button button--danger button--small" type="submit">削除</button></form></div>{% else %}受付終了{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p class="empty-state">この月に登録した希望はありません。</p>{% endif %}</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/script.js') }}" defer></script>{% endblock %}

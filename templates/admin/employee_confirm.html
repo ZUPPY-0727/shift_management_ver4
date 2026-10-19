@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}従業員操作の確認 | シフト管理システム{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">管理者画面</p><h1>従業員操作の確認</h1><p class="lead">{{ action_label }}前に、対象と操作内容を確認してください。</p></div></section>
+<section class="panel settings-panel">
+    {% if employee %}
+    <h2><span class="employee-id">{{ employee.employee_number }}</span>　{{ employee.name }}</h2>
+    <p>操作：<strong>{{ action_label }}</strong></p>
+    {% if action == 'retire' %}<div class="form-notice">退職後はログインできません。現在のログイン状態も無効になります。希望・確定シフト等の履歴は保持します。</div>
+    {% elif action == 'restore' %}<div class="form-notice">在籍状態に戻します。従業員IDと履歴は維持します。パスワードが不明な場合は、復職後に再設定してください。</div>
+    {% elif action == 'delete' %}<div class="form-notice">完全削除は取り消せません。希望シフトまたは割当シフトが1件でもある従業員は削除できません。履歴を残す場合は退職を使用してください。</div><p class="section-note">希望履歴：{{ 'あり' if history.has_requests else 'なし' }} ／ 割当シフト履歴：{{ 'あり' if history.has_shifts else 'なし' }}</p>{% if not history.can_delete %}<p class="flash flash--error section-note">履歴があるため、この従業員は完全削除できません。</p>{% endif %}
+    {% elif action == 'reset-password' %}<div class="form-notice">現在のパスワードを無効にし、一度だけ表示する仮パスワードを発行します。従業員の既存のログイン状態は無効になります。本人は仮パスワードでログイン後、必ず新しいパスワードを設定します。</div>{% endif %}
+    {% if confirmation_token %}
+    <form method="post" class="form-stack" data-confirm="従業員ID {{ employee.employee_number }}（{{ employee.name }}）を対象に、{{ action_label }}操作を実行しますか？">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="confirmation_token" value="{{ confirmation_token }}">
+        <label class="confirm-check"><input type="checkbox" name="confirm_ack" value="yes" required><span>従業員ID・氏名と操作内容を確認しました。</span></label>
+        <div class="form-actions"><button class="button {{ 'button--danger' if action == 'delete' else 'button--confirm' }}" type="submit" {% if action == 'delete' and not history.can_delete %}disabled{% endif %}>{{ action_label }}</button><a class="button button--outline" href="{{ url_for('admin.employees', status=employee.employment_status) }}">キャンセル</a></div>
+    </form>
+    {% else %}<p class="section-note">この確認操作は使用済みです。もう一度操作する場合は確認画面を開き直してください。</p><div class="form-actions section-note"><a class="button button--outline" href="{{ url_for('admin.employee_action', employee_id=employee.employee_id, action=action) }}">確認画面を開き直す</a><a class="button button--outline" href="{{ url_for('admin.employees', status=employee.employment_status) }}">従業員一覧へ</a></div>{% endif %}
+    {% else %}<p>確認情報が無効、またはすでに使用されています。対象の従業員を選び直してください。</p><a class="button button--outline" href="{{ url_for('admin.employees') }}">従業員一覧へ戻る</a>{% endif %}
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/script.js') }}" defer></script>{% endblock %}

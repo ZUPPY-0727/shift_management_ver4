@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}店舗設定 | シフト管理システム{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">管理者画面</p><h1>店舗設定</h1><p class="lead">店舗の基本時給を設定します。</p></div></section>
+<section class="panel settings-panel">
+    <h2>基本時給</h2><p>時給制で個別時給が未設定の従業員に適用します。個別時給が設定されている場合は、そちらを優先します。</p>
+    <form method="post" class="form-stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group"><label for="base_hourly_rate">基本時給（円）</label><input id="base_hourly_rate" name="base_hourly_rate" type="number" min="1" step="1" value="{{ base_hourly_rate }}" required><p class="field-help">正の整数で入力してください。初期値は1,280円です。</p></div>
+        <div class="form-notice">予想収入は現在の時給で概算します。過去の時給改定履歴は扱わないため、基本時給の変更は過去月を表示した際の概算にも反映されます。</div>
+        <button class="button button--primary" type="submit">基本時給を保存</button>
+    </form>
+</section>
+{% endblock %}

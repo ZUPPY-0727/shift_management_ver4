@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}確定シフト確認 | シフト管理システム{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">従業員画面</p><h1>確定シフト確認</h1><p class="lead">本人の月間勤務予定と、全従業員の確定シフトを確認します。</p></div></section>
+<section class="panel filter-panel"><form method="get" class="inline-form"><div class="form-group inline-form__field"><label for="target_month">対象月</label><input id="target_month" name="target_month" type="month" value="{{ selected_month }}" required></div><button class="button button--primary" type="submit">表示する</button></form></section>
+{% if not is_confirmed %}
+<section class="panel empty-state section-block"><h2>この月のシフトはまだ確定していません</h2><p>管理者が確定すると、この画面で勤務予定を確認できます。</p></section>
+{% else %}
+<section class="panel section-block" aria-labelledby="summary-title">
+    <div class="panel-heading"><div><h2 id="summary-title">{{ selected_month }} 本人の月間勤務予定</h2><p>確定シフトと、確定時に保存した予定休憩時間に基づく集計です。</p></div></div>
+    <dl class="summary-grid">
+        <div><dt>月間拘束時間</dt><dd>{{ summary.gross_minutes|duration }}</dd></div>
+        <div><dt>月間予定休憩時間</dt><dd>{{ summary.break_minutes|duration }}</dd></div>
+        <div><dt>月間予定実働時間</dt><dd>{{ summary.net_minutes|duration }}</dd></div>
+        <div><dt>1日8時間超の予定時間</dt><dd>{{ summary.overtime_minutes|duration }}</dd></div>
+        <div class="summary-grid__income"><dt>月間予想収入（概算）</dt><dd>{% if summary.pay_type == 'hourly' %}{{ '{:,}'.format(summary.expected_income) }}円{% else %}月給制のため計算対象外{% endif %}</dd></div>
+    </dl>
+    {% if summary.pay_type == 'hourly' %}<p class="field-help">本人の適用時給：{{ '{:,}'.format(summary.hourly_rate) }}円。1日8時間超の予定実働に25%の割増を含みます。現在の時給を使用し、時給改定履歴は扱いません。</p>{% endif %}
+    <div class="form-notice"><p>予想収入は確定シフトと予定休憩時間から計算した概算です。実際の給与額とは異なる場合があります。正式な給与額・法定割増賃金を算定するものではありません。</p><p>週40時間超・月60時間超の割増、深夜割増、休日割増、変形労働時間制、税金、各種手当、交通費は計算対象外です。実際の出退勤や休憩取得の記録には使用しません。</p></div>
+    <h3 class="section-note">本人の日別勤務予定</h3>
+    {% if summary.days %}<div class="table-wrap"><table><thead><tr><th>日付</th><th>勤務時間</th><th>拘束時間</th><th>予定休憩</th><th>予定実働</th></tr></thead><tbody>{% for day in summary.days %}<tr><td>{{ day.work_date }}</td><td>{{ day.start_time }}～{{ day.end_time }}</td><td>{{ day.gross_minutes|duration }}</td><td>{{ day.break_minutes }}分</td><td>{{ day.net_minutes|duration }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty-state">この月に本人の確定シフトはありません。</p>{% endif %}
+</section>
+<section class="panel section-block" aria-labelledby="confirmed-title"><div class="panel-heading"><div><h2 id="confirmed-title">{{ selected_month }}の確定シフト（全従業員）</h2><p>{{ shifts|length }}件</p></div><span class="status-badge status-badge--active">確定済み</span></div>
+{% if shifts %}<div class="table-wrap"><table><thead><tr><th>日付</th><th>従業員ID</th><th>氏名</th><th>区分</th><th>開始</th><th>終了</th></tr></thead><tbody>{% for shift in shifts %}<tr {% if shift.is_current_employee %}class="is-self"{% endif %}><td>{{ shift.work_date }}</td><td class="employee-id">{{ shift.employee_number }}</td><td>{{ shift.name }}{% if shift.is_current_employee %}<span class="self-label">本人</span>{% endif %}</td><td>{{ shift.employee_type }}</td><td>{{ shift.start_time }}</td><td>{{ shift.end_time }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty-state">確定済みの勤務はありません。</p>{% endif %}</section>
+{% endif %}
+{% endblock %}

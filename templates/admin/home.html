@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}管理者ホーム | シフト管理システム{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">管理者画面</p><h1>管理者ホーム</h1><p class="lead"><strong>{{ admin.username }}</strong> さんとしてログイン中です。</p></div></section>
+<section aria-labelledby="features-title">
+    <h2 id="features-title">利用できる機能</h2>
+    <div class="feature-grid">
+        {% for title, text, endpoint, button in [
+            ('従業員管理', '従業員の登録と給与形態・個別時給の編集を行います。', 'admin.employees', '従業員管理を開く'),
+            ('提出期限設定', '対象月ごとの希望シフト提出期限を設定します。', 'admin.deadlines', '提出期限を設定する'),
+            ('希望シフト確認', '従業員から登録された出勤可能日の希望を確認します。', 'admin.shift_requests', '希望シフトを確認する'),
+            ('シフト案作成・確定', '希望時間内でシフト案を作成し、月単位で確定します。', 'admin.shifts', 'シフト案を作成する'),
+            ('店舗設定', '個別時給が未設定の従業員に適用する基本時給を設定します。', 'admin.store_settings', '基本時給を設定する'),
+            ('休憩時間設定', '拘束時間に応じた店舗共通の予定休憩ルールを設定します。', 'admin.break_settings', '休憩時間を設定する')
+        ] %}
+        <article class="feature-card feature-card--active"><div><span class="status-badge status-badge--active">利用可能</span><h3>{{ title }}</h3><p>{{ text }}</p></div><a class="button button--primary" href="{{ url_for(endpoint) }}">{{ button }}</a></article>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

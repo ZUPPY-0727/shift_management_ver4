@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}従業員管理 | シフト管理システム{% endblock %}
+{% macro pay_fields(prefix, values) %}
+<div class="form-group">
+    <label for="{{ prefix }}_pay_type">給与形態</label>
+    <select id="{{ prefix }}_pay_type" name="pay_type" data-pay-type>
+        {% if prefix == 'create' %}<option value="">雇用区分から自動選択</option>{% endif %}
+        <option value="hourly" {% if values.get('pay_type') == 'hourly' %}selected{% endif %}>時給制</option>
+        <option value="monthly" {% if values.get('pay_type') == 'monthly' %}selected{% endif %}>月給制</option>
+    </select>
+</div>
+<div class="form-group" data-hourly-field {% if values.get('pay_type') != 'hourly' %}hidden{% endif %}>
+    <label for="{{ prefix }}_hourly_rate">個別時給（円・任意）</label>
+    <input id="{{ prefix }}_hourly_rate" name="hourly_rate" type="number" min="1" step="1" value="{{ values.get('hourly_rate', '') }}" data-hourly-input {% if values.get('pay_type') != 'hourly' %}disabled{% endif %}>
+    <p class="field-help">空欄の場合は店舗の基本時給（{{ '{:,}'.format(store_settings.base_hourly_rate) }}円）を適用します。解除するときも空欄で保存してください。</p>
+</div>
+{% endmacro %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">管理者画面</p><h1>従業員管理</h1><p class="lead">従業員の登録、情報編集、在籍状態とパスワードの管理を行います。</p></div></section>
+<nav class="employee-status-tabs" aria-label="従業員一覧の切替">
+    <a class="button {{ 'button--primary' if selected_status == 'active' else 'button--outline' }}" href="{{ url_for('admin.employees') }}" {% if selected_status == 'active' %}aria-current="page"{% endif %}>在籍者一覧</a>
+    <a class="button {{ 'button--primary' if selected_status == 'retired' else 'button--outline' }}" href="{{ url_for('admin.employees', status='retired') }}" {% if selected_status == 'retired' %}aria-current="page"{% endif %}>退職者一覧</a>
+</nav>
+<div class="admin-two-column">
+    <section class="panel" aria-labelledby="employee-list-title">
+        <div class="panel-heading"><div><h2 id="employee-list-title">{{ '在籍者一覧' if selected_status == 'active' else '退職者一覧' }}</h2><p>{{ employees|length }}名を表示しています。</p></div></div>
+        {% if employees %}
+        <div class="table-wrap"><table><thead><tr><th>従業員ID</th><th>氏名</th><th>雇用区分</th><th>在籍状態</th><th>給与形態</th><th>適用時給</th><th>操作</th></tr></thead><tbody>
+        {% for employee in employees %}
+            <tr><td class="employee-id">{{ employee.employee_number }}</td><td>{{ employee.name }}</td><td>{{ {'E':'E：社員','P':'P：パート','A':'A：アルバイト'}[employee.employee_type] }}</td><td><span class="status-badge status-badge--{{ employee.employment_status }}">{{ '在籍' if employee.employment_status == 'active' else '退職' }}</span></td><td>{{ '時給制' if employee.pay_type == 'hourly' else '月給制' }}</td><td>{% if employee.pay_type == 'hourly' %}{{ '{:,}'.format(employee.effective_hourly_rate) }}円<span class="field-help">（{{ '個別設定' if employee.hourly_rate is not none else '店舗基本' }}）</span>{% else %}対象外{% endif %}</td><td><div class="employee-row-actions">
+                <a class="button button--outline button--small" href="{{ url_for('admin.edit_employee', employee_id=employee.employee_id) }}">情報を編集</a>
+                <a class="button button--outline button--small" href="{{ url_for('admin.employees', edit=employee.employee_id, status=selected_status) }}#pay-editor">給与情報を編集</a>
+                {% if employee.employment_status == 'active' %}<a class="button button--outline button--small" href="{{ url_for('admin.employee_action', employee_id=employee.employee_id, action='retire') }}">退職</a>{% else %}<a class="button button--outline button--small" href="{{ url_for('admin.employee_action', employee_id=employee.employee_id, action='restore') }}">復職</a>{% endif %}
+                <a class="button button--danger button--small" href="{{ url_for('admin.employee_action', employee_id=employee.employee_id, action='delete') }}">完全削除</a>
+                <a class="button button--outline button--small" href="{{ url_for('admin.employee_action', employee_id=employee.employee_id, action='reset-password') }}">パスワード再設定</a>
+            </div></td></tr>
+        {% endfor %}
+        </tbody></table></div>
+        {% else %}<div class="empty-state">登録されている従業員はいません。</div>{% endif %}
+    </section>
+    <section class="panel registration-panel" aria-labelledby="register-title">
+        <h2 id="register-title">従業員を登録</h2>
+        <p class="help-text">従業員IDは登録時に自動採番されます。</p>
+        <form method="post" class="form-stack" data-pay-form data-auto-pay="true">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="create">
+            <input type="hidden" name="registration_token" value="{{ registration_token }}">
+            <div class="form-group"><label for="name">氏名</label><input id="name" name="name" value="{{ form_data.get('name', '') }}" maxlength="100" autocomplete="name" required></div>
+            <div class="form-group"><label for="employee_type">雇用区分</label><select id="employee_type" name="employee_type" data-employment-type required><option value="">選択してください</option>{% for value, label in [('E','E：社員'),('P','P：パート'),('A','A：アルバイト')] %}<option value="{{ value }}" {% if form_data.get('employee_type') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+            {{ pay_fields('create', form_data) }}
+            <p class="field-help">社員は月給制、パート・アルバイトは時給制が初期値です。給与形態は管理者が変更できます。</p>
+            <div class="form-notice">仮パスワードを自動発行します。登録完了画面で一度だけ表示する従業員IDと仮パスワードを本人へ伝えてください。初回ログイン後、本人による変更が必須です。</div>
+            <button class="button button--primary button--full" type="submit">従業員を登録する</button>
+        </form>
+    </section>
+</div>
+{% if editing_employee %}
+<section id="pay-editor" class="panel section-block settings-panel" aria-labelledby="pay-title">
+    <h2 id="pay-title">給与情報を編集</h2>
+    <p><strong class="employee-id">{{ editing_employee.employee_number }}</strong>　{{ editing_employee.name }}</p>
+    <form method="post" class="form-stack" data-pay-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="update_pay"><input type="hidden" name="employee_id" value="{{ editing_employee.employee_id }}">
+        {{ pay_fields('edit', pay_form_data) }}
+        <p class="field-help">月給制にすると個別時給は解除されます。時給制へ戻した場合は、個別時給を設定しない限り店舗基本時給を適用します。</p>
+        <div class="form-actions"><button class="button button--primary" type="submit">給与情報を保存</button><a class="button button--outline" href="{{ url_for('admin.employees') }}">編集を閉じる</a></div>
+    </form>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/script.js') }}" defer></script>{% endblock %}

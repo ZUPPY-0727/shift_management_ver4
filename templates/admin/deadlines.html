@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}提出期限設定 | シフト管理システム{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">管理者画面</p><h1>提出期限設定</h1><p class="lead">対象月ごとに希望シフトの提出期限を設定します。</p></div></section>
+<section class="panel settings-panel">
+    <h2>期限を登録・更新</h2>
+    <form method="post" class="form-stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group"><label for="target_month">対象月</label><input id="target_month" name="target_month" type="month" value="{{ form_data.target_month }}" required></div>
+        <div class="form-group"><label for="deadline_date">提出期限の日付</label><input id="deadline_date" name="deadline_date" type="date" value="{{ form_data.deadline_date }}" required></div>
+        <div class="form-group"><label for="deadline_time">提出期限の時刻</label><input id="deadline_time" name="deadline_time" type="time" value="{{ form_data.deadline_time }}" required><p class="field-help">Asia/Tokyoとして保存します。初期値は23:59です。</p></div>
+        <button class="button button--primary" type="submit">期限を保存</button>
+    </form>
+</section>
+<section class="panel section-block"><h2>設定済みの提出期限</h2>
+{% if periods %}<div class="table-wrap"><table><thead><tr><th>対象月</th><th>提出期限（Asia/Tokyo）</th><th>操作</th></tr></thead><tbody>{% for period in periods %}<tr><td>{{ period.target_month }}</td><td>{{ period.deadline_at }}</td><td><a href="{{ url_for('admin.deadlines', target_month=period.target_month) }}">この月を更新</a></td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p class="empty-state">提出期限はまだ設定されていません。</p>{% endif %}</section>
+{% endblock %}

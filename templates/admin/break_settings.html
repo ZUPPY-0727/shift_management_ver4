@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}休憩時間設定 | シフト管理システム{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">管理者画面</p><h1>休憩時間設定</h1><p class="lead">拘束時間に応じた店舗共通の予定休憩時間を設定します。</p></div></section>
+<section class="panel settings-panel">
+    <h2>店舗共通の休憩ルール</h2><p>拘束時間は勤務開始から終了までの時間です。予定実働時間は拘束時間から予定休憩時間を差し引いて計算します。</p>
+    <form method="post" class="form-stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% for rule in rules %}
+        <div class="form-group"><label for="{{ rule.category }}">{{ rule.label }}</label><select id="{{ rule.category }}" name="{{ rule.category }}" required>{% for minutes in rule.choices %}<option value="{{ minutes }}" {% if values.get(rule.category)|string == minutes|string %}selected{% endif %}>{{ minutes }}分</option>{% endfor %}</select></div>
+        {% endfor %}
+        <div class="form-notice">この設定は予定計算のための店舗ルールです。拘束時間・予定実働時間に応じた休憩の検証はサーバー側で行います。変更後のルールは編集中のシフトへ反映されますが、確定済みシフトに保存した休憩時間は変わりません。</div>
+        <button class="button button--primary" type="submit">休憩時間設定を保存</button>
+    </form>
+</section>
+{% endblock %}

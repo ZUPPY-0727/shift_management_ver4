@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}従業員ホーム | シフト管理システム{% endblock %}
+{% block content %}
+<div class="employee-home-layout">
+    <section class="page-heading"><div><p class="eyebrow">従業員画面</p><h1>従業員ホーム</h1><p class="lead"><strong>{{ employee.name }}</strong> さん、ログインしました。</p></div></section>
+    <section class="profile-card panel" aria-labelledby="profile-title"><h2 id="profile-title">登録情報</h2><dl class="profile-list"><div><dt>従業員ID</dt><dd class="employee-id">{{ employee.employee_number }}</dd></div><div><dt>氏名</dt><dd>{{ employee.name }}</dd></div><div><dt>雇用区分</dt><dd>{{ {'E':'E：社員','P':'P：パート','A':'A：アルバイト'}[employee.employee_type] }}</dd></div></dl><div class="form-actions section-note"><a class="button button--outline" href="{{ url_for('employee.change_password') }}">パスワードを変更する</a></div></section>
+    <section class="section-block" aria-labelledby="features-title"><h2 id="features-title">利用できる機能</h2><div class="feature-grid feature-grid--two">
+        <article class="feature-card feature-card--active"><div><span class="status-badge status-badge--active">利用可能</span><h3>希望シフト登録</h3><p>対象月の出勤可能な日と時間を登録します。</p></div><a class="button button--primary" href="{{ url_for('employee.shift_requests') }}">希望シフトを登録する</a></article>
+        <article class="feature-card feature-card--active"><div><span class="status-badge status-badge--active">利用可能</span><h3>確定シフト確認</h3><p>全従業員の確定シフトと、本人の勤務予定・予想収入を確認します。</p></div><a class="button button--primary" href="{{ url_for('employee.confirmed_shifts') }}">確定シフトを確認する</a></article>
+    </div></section>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% set is_admin = login_type == "admin" %}
+{% block title %}{{ "管理者" if is_admin else "従業員" }}ログイン | シフト管理システム{% endblock %}
+{% block content %}
+<div class="auth-layout">
+    <section class="auth-card panel" aria-labelledby="login-title">
+        <span class="role-label {{ 'role-label--admin' if is_admin else 'role-label--employee' }}">{{ '管理者用' if is_admin else '従業員用' }}</span>
+        <h1 id="login-title">{{ '管理者' if is_admin else '従業員' }}ログイン</h1>
+        <p class="help-text">{{ '管理者のユーザー名とパスワードを入力してください。' if is_admin else '発行された6桁の従業員IDとパスワードを入力してください。' }}</p>
+        <form method="post" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                {% if is_admin %}
+                <label for="username">ユーザー名</label>
+                <input id="username" name="username" value="{{ form_data.get('username', '') }}" autocomplete="username" required autofocus>
+                {% else %}
+                <label for="employee_number">従業員ID</label>
+                <input id="employee_number" name="employee_number" value="{{ form_data.get('employee_number', '') }}" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" placeholder="000001" autocomplete="username" aria-describedby="employee-number-help" required autofocus>
+                <p id="employee-number-help" class="field-help">半角数字6桁で入力してください。</p>
+                {% endif %}
+            </div>
+            <div class="form-group"><label for="password">パスワード</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
+            <button class="button button--primary button--full" type="submit">ログイン</button>
+        </form>
+        <a class="back-link" href="{{ url_for('auth.index') }}">← ログイン入口へ戻る</a>
+    </section>
+</div>
+{% endblock %}

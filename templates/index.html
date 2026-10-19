@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}ログイン入口 | シフト管理システム{% endblock %}
+{% block content %}
+<section class="hero panel">
+    <p class="eyebrow">SHIFT MANAGEMENT Ver.4</p>
+    <h1>シフト管理システム</h1>
+    <p class="lead">利用する画面を選択してください。</p>
+    <div class="login-choice-grid">
+        <article class="choice-card">
+            <div><span class="role-label role-label--admin">管理者用</span><h2>管理者ログイン</h2><p>従業員・店舗設定とシフトの作成を行います。</p></div>
+            <a class="button button--primary button--large" href="{{ url_for('auth.admin_login') }}">管理者ログインへ</a>
+        </article>
+        <article class="choice-card">
+            <div><span class="role-label role-label--employee">従業員用</span><h2>従業員ログイン</h2><p>希望シフトを登録し、確定シフトと本人の勤務予定を確認します。</p></div>
+            <a class="button button--secondary button--large" href="{{ url_for('auth.employee_login') }}">従業員ログインへ</a>
+        </article>
+    </div>
+</section>
+{% endblock %}
