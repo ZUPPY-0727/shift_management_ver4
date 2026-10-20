@@ -1,4 +1,4 @@
-"""希望内のシフト作成と、月単位の休憩固定・確定。"""
+"""希望内の勤務と月単位の確定。確定後も管理者用ルートから勤務を修正できる。"""
 
 import sqlite3
 
@@ -32,16 +32,29 @@ def _shift(shift_id, connection):
     return row
 
 
-def _draft_month(target_month, connection, create=False):
+def _editable_month(target_month, connection, create=False):
     row = shift_repository.get_shift_month(target_month, connection)
     if row is None and create:
         month_id = shift_repository.create_shift_month(target_month, connection)
         row = shift_repository.get_shift_month_by_id(month_id, connection)
     if row is None:
         raise NotFoundError("対象月のシフト案がありません。")
-    if row["status"] != "draft":
-        raise BusinessRuleError("確定済みの月はシフトを変更できません。")
+    if row["status"] not in {"draft", "confirmed"}:
+        raise BusinessRuleError("この月のシフト状態を確認できません。")
     return row
+
+
+def _draft_month(target_month, connection):
+    """初回の確定操作だけはdraftを要求し、確定解除・再確定を行わない。"""
+    row = _editable_month(target_month, connection)
+    if row["status"] != "draft":
+        raise BusinessRuleError("この月はすでに確定済みです。再確定は必要ありません。")
+    return row
+
+
+def _touch_month(month, connection):
+    if not shift_repository.touch_shift_month(month["shift_month_id"], connection):
+        raise BusinessRuleError("シフトの対象月が変更されたため保存できません。")
 
 
 def _within_request(employee_id, work_date, start_time, end_time, connection):
@@ -52,53 +65,77 @@ def _within_request(employee_id, work_date, start_time, end_time, connection):
         raise BusinessRuleError("希望時間外へシフトを割り当てられません。")
 
 
-def add_draft_shift(employee_id, work_date, start_time, end_time):
-    """V3と同じ4引数。対象月は検証済み勤務日から求める。"""
+def add_shift(employee_id, work_date, start_time, end_time):
+    """draft/confirmedへ追加する。確定済みなら予定休憩も同時保存する。"""
     connection = get_db()
     try:
         with atomic(connection):
             _active_employee(employee_id, connection)
             work_date = validate_work_date(work_date)
             start_time, end_time = validate_time_range(start_time, end_time)
-            month = _draft_month(work_date[:7], connection, create=True)
+            month = _editable_month(work_date[:7], connection, create=True)
             _within_request(employee_id, work_date, start_time, end_time, connection)
-            break_service.calculate_work(start_time, end_time)
+            work = break_service.calculate_work(start_time, end_time)
+            rest = work["break_minutes"] if month["status"] == "confirmed" else None
             shift_id = shift_repository.create_shift(
-                month["shift_month_id"], employee_id, work_date, start_time, end_time, connection
+                month["shift_month_id"], employee_id, work_date, start_time, end_time, connection,
+                break_minutes=rest,
             )
+            _touch_month(month, connection)
             return shift_repository.get_shift(shift_id, connection)
     except sqlite3.IntegrityError as error:
         raise ConflictError("同じ従業員・日付のシフトがあるか、登録できない内容です。") from error
 
 
-def edit_draft_shift(shift_id, employee_id, work_date, start_time, end_time):
+def edit_shift(shift_id, employee_id, work_date, start_time, end_time):
+    """変更した行だけを再計算する。未変更保存では休憩・日時を含め何も更新しない。"""
     connection = get_db()
     try:
         with atomic(connection):
             existing = _shift(shift_id, connection)
-            _draft_month(existing["target_month"], connection)
+            month = _editable_month(existing["target_month"], connection)
             _active_employee(employee_id, connection)
             work_date = validate_work_date(work_date)
             if work_date[:7] != existing["target_month"]:
                 raise BusinessRuleError("シフトを別の対象月へ移動できません。")
             start_time, end_time = validate_time_range(start_time, end_time)
             _within_request(employee_id, work_date, start_time, end_time, connection)
-            break_service.calculate_work(start_time, end_time)
-            if not shift_repository.update_shift(shift_id, employee_id, work_date, start_time, end_time, connection):
+            new_values = (employee_id, work_date, start_time, end_time)
+            old_values = tuple(existing[key] for key in ("employee_id", "work_date", "start_time", "end_time"))
+            if new_values == old_values:
+                return existing
+            work = break_service.calculate_work(start_time, end_time)
+            rest = work["break_minutes"] if month["status"] == "confirmed" else None
+            if not shift_repository.update_shift(
+                shift_id, employee_id, work_date, start_time, end_time, connection,
+                break_minutes=rest,
+            ):
                 raise BusinessRuleError("シフトの状態が変更されたため保存できません。")
+            _touch_month(month, connection)
             return shift_repository.get_shift(shift_id, connection)
     except sqlite3.IntegrityError as error:
         raise ConflictError("同じ従業員・日付のシフトがあるか、更新できない内容です。") from error
 
 
-def delete_draft_shift(shift_id):
+def delete_shift(shift_id):
+    """確定後も削除できる。最後の勤務を削除しても確定状態・確定日時を維持する。"""
     connection = get_db()
-    with atomic(connection):
-        existing = _shift(shift_id, connection)
-        _draft_month(existing["target_month"], connection)
-        if not shift_repository.delete_shift(shift_id, connection):
-            raise BusinessRuleError("シフトの状態が変更されたため削除できません。")
-        return True
+    try:
+        with atomic(connection):
+            existing = _shift(shift_id, connection)
+            month = _editable_month(existing["target_month"], connection)
+            if not shift_repository.delete_shift(shift_id, connection):
+                raise BusinessRuleError("シフトの状態が変更されたため削除できません。")
+            _touch_month(month, connection)
+            return True
+    except sqlite3.IntegrityError as error:
+        raise ConflictError("シフトを削除できませんでした。内容を確認してください。") from error
+
+
+# 既存の呼出元との互換名。今後の呼出には状態を限定しない上の名前を使用する。
+add_draft_shift = add_shift
+edit_draft_shift = edit_shift
+delete_draft_shift = delete_shift
 
 
 def confirm_month(target_month, confirmed_at=None):

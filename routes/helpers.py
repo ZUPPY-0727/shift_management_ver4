@@ -51,3 +51,10 @@ def duration_label(value):
     """整数分を、小数に丸めず日本語の時間・分へ整形する。"""
     hours, minutes = divmod(int(value), 60)
     return f"{hours}時間{minutes}分" if minutes else f"{hours}時間"
+
+
+def date_with_weekday_label(value):
+    """保存済みの勤務日を、環境の言語設定に依存しない日本語曜日付きで表示する。"""
+    work_date = datetime.strptime(value, "%Y-%m-%d")
+    weekday = "月火水木金土日"[work_date.weekday()]
+    return f"{value}（{weekday}）"

@@ -396,26 +396,38 @@ def test_database_rejects_confirmation_without_snapshots_and_direct_confirmed_in
         db.execute("INSERT INTO shift_months (target_month, status, confirmed_at) VALUES ('2099-11', 'confirmed', 'now')")
 
 
-def test_confirmed_shift_service_and_database_mutations_are_blocked(db):
+def test_generic_shift_service_can_mutate_confirmed_month_without_reconfirming(db):
+    employee_id = _employee()["employee_id"]
+    shift = _shift(employee_id)
+    _request(employee_id, "2099-10-02")
+    confirmed = dict(shift_service.confirm_month(MONTH))
+    added = shift_service.add_shift(employee_id, "2099-10-02", "09:00", "17:00")
+    assert added["shift_month_status"] == "confirmed" and added["break_minutes"] == 60
+    edited = shift_service.edit_shift(shift["shift_id"], employee_id, "2099-10-01", "10:00", "17:00")
+    assert edited["start_time"] == "10:00" and edited["break_minutes"] == 45
+    assert shift_service.delete_shift(added["shift_id"])
+    month = shift_repository.get_shift_month(MONTH, db)
+    assert month["status"] == "confirmed"
+    assert month["confirmed_at"] == confirmed["confirmed_at"]
+    assert [row["shift_id"] for row in shift_service.list_confirmed_shifts(MONTH)] == [shift["shift_id"]]
+    with pytest.raises(BusinessRuleError):
+        shift_service.confirm_month(MONTH)
+
+
+def test_database_requires_confirmed_break_snapshots_and_preserves_month_status(db):
     employee_id = _employee()["employee_id"]
     shift = _shift(employee_id)
     shift_service.confirm_month(MONTH)
-    for operation in (
-        lambda: shift_service.add_draft_shift(employee_id, "2099-10-02", "09:00", "17:00"),
-        lambda: shift_service.edit_draft_shift(shift["shift_id"], employee_id, "2099-10-01", "10:00", "17:00"),
-        lambda: shift_service.delete_draft_shift(shift["shift_id"]),
-    ):
-        with pytest.raises(BusinessRuleError):
-            operation()
     statements = [
-        ("UPDATE shifts SET break_minutes = 90 WHERE shift_id = ?", (shift["shift_id"],)),
-        ("DELETE FROM shifts WHERE shift_id = ?", (shift["shift_id"],)),
+        ("UPDATE shifts SET break_minutes = NULL WHERE shift_id = ?", (shift["shift_id"],)),
         ("INSERT INTO shifts (shift_month_id, employee_id, work_date, start_time, end_time) VALUES (?, ?, '2099-10-02', '09:00', '17:00')", (shift["shift_month_id"], employee_id)),
         ("UPDATE shift_months SET status = 'draft', confirmed_at = NULL WHERE target_month = ?", (MONTH,)),
     ]
     for statement, parameters in statements:
         with pytest.raises(sqlite3.IntegrityError), atomic(db):
             db.execute(statement, parameters)
+    assert shift_repository.get_shift(shift["shift_id"], db)["break_minutes"] == 60
+    assert shift_repository.get_shift_month(MONTH, db)["status"] == "confirmed"
 
 
 def test_confirmed_list_sorts_by_date_type_then_employee_id(db):

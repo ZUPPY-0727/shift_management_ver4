@@ -136,3 +136,10 @@ def delete_admin_request(employee_id, work_date):
 
 def list_available_candidates(work_date):
     return shift_request_repository.list_available_candidates_by_date(validate_work_date(work_date), get_db())
+
+
+def list_unassigned_candidates_by_month(target_month):
+    """編集中・確定済みを区別せず、保存済みの割当に基づく未割当候補を返す。"""
+    return shift_request_repository.list_unassigned_candidates_by_month(
+        validate_target_month(target_month), get_db(),
+    )

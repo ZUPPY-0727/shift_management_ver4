@@ -73,6 +73,18 @@ def list_shift_requests_by_month(target_month, connection=None):
     ).fetchall()
 
 
+def list_unassigned_candidates_by_month(target_month, connection=None):
+    """希望は残したまま、同じ従業員・勤務日に割当のない在籍者だけを取得する。"""
+    return connection_or_default(connection).execute(
+        _REQUEST_QUERY + """ WHERE sr.target_month = ? AND e.employment_status = 'active'
+        AND NOT EXISTS (
+            SELECT 1 FROM shifts AS s
+            WHERE s.employee_id = sr.employee_id AND s.work_date = sr.work_date
+        )""" + _DISPLAY_ORDER,
+        (target_month,),
+    ).fetchall()
+
+
 def list_available_candidates_by_date(work_date, connection=None):
     return connection_or_default(connection).execute(
         _REQUEST_QUERY + " WHERE sr.work_date = ? AND e.employment_status = 'active'"

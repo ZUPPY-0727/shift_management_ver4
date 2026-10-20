@@ -8,7 +8,7 @@ from werkzeug.security import check_password_hash
 
 from app import create_app
 from config import DEFAULT_DATABASE_PATH
-from database import DatabaseSetupError, get_db, init_db
+from database import CURRENT_SCHEMA_VERSION, DatabaseSetupError, get_db, init_db
 
 
 def test_database_default_is_v4_instance_only():
@@ -55,7 +55,7 @@ def test_init_db_prepares_v4_tables_and_settings_but_no_accounts(uninitialized_a
         db = get_db()
         names = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")}
         assert names == {"admins", "employees", "employee_pay_settings", "store_settings", "break_rules", "shift_request_periods", "shift_requests", "shift_months", "shifts", "login_attempts", "one_time_tokens"}
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert db.execute("PRAGMA user_version").fetchone()[0] == CURRENT_SCHEMA_VERSION
         assert db.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM admins").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM employees").fetchone()[0] == 0

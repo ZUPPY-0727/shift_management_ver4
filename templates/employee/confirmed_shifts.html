@@ -21,6 +21,28 @@
     {% if summary.days %}<div class="table-wrap"><table><thead><tr><th>日付</th><th>勤務時間</th><th>拘束時間</th><th>予定休憩</th><th>予定実働</th></tr></thead><tbody>{% for day in summary.days %}<tr><td>{{ day.work_date }}</td><td>{{ day.start_time }}～{{ day.end_time }}</td><td>{{ day.gross_minutes|duration }}</td><td>{{ day.break_minutes }}分</td><td>{{ day.net_minutes|duration }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty-state">この月に本人の確定シフトはありません。</p>{% endif %}
 </section>
 <section class="panel section-block" aria-labelledby="confirmed-title"><div class="panel-heading"><div><h2 id="confirmed-title">{{ selected_month }}の確定シフト（全従業員）</h2><p>{{ shifts|length }}件</p></div><span class="status-badge status-badge--active">確定済み</span></div>
-{% if shifts %}<div class="table-wrap"><table><thead><tr><th>日付</th><th>従業員ID</th><th>氏名</th><th>区分</th><th>開始</th><th>終了</th></tr></thead><tbody>{% for shift in shifts %}<tr {% if shift.is_current_employee %}class="is-self"{% endif %}><td>{{ shift.work_date }}</td><td class="employee-id">{{ shift.employee_number }}</td><td>{{ shift.name }}{% if shift.is_current_employee %}<span class="self-label">本人</span>{% endif %}</td><td>{{ shift.employee_type }}</td><td>{{ shift.start_time }}</td><td>{{ shift.end_time }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty-state">確定済みの勤務はありません。</p>{% endif %}</section>
+{% if shifts %}
+<div class="table-wrap">
+    <table class="confirmed-shifts-table">
+        <thead><tr><th scope="col">日付</th><th scope="col">従業員ID</th><th scope="col">氏名</th><th scope="col">区分</th><th scope="col">開始</th><th scope="col">終了</th></tr></thead>
+        {% for date_group in shifts|groupby('work_date') %}
+        <tbody class="confirmed-shifts-day">
+            {% for shift in date_group.list %}
+            <tr{% if shift.is_current_employee %} class="is-self"{% endif %}>
+                {% if loop.first %}
+                <th class="confirmed-shifts-date" scope="rowgroup" rowspan="{{ date_group.list|length }}"><time datetime="{{ date_group.grouper }}">{{ date_group.grouper|date_with_weekday }}</time></th>
+                {% endif %}
+                <td class="employee-id">{{ shift.employee_number }}</td>
+                <td>{{ shift.name }}{% if shift.is_current_employee %}<span class="self-label">本人</span>{% endif %}</td>
+                <td>{{ shift.employee_type }}</td>
+                <td>{{ shift.start_time }}</td>
+                <td>{{ shift.end_time }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        {% endfor %}
+    </table>
+</div>
+{% else %}<p class="empty-state">確定済みの勤務はありません。</p>{% endif %}</section>
 {% endif %}
 {% endblock %}

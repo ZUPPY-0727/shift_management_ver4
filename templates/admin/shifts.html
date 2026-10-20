@@ -6,36 +6,36 @@
 {% endmacro %}
 {% block title %}シフト案作成・確定 | シフト管理システム{% endblock %}
 {% block content %}
-<section class="page-heading"><div><p class="eyebrow">管理者画面</p><h1>シフト案作成・確定</h1><p class="lead">従業員の希望時間内で勤務を割り当て、月単位で確定します。</p></div><span class="shift-status shift-status--{{ status }}">{{ '確定済み' if status == 'confirmed' else '編集中' }}</span></section>
+<section class="page-heading"><div><p class="eyebrow">管理者画面</p><h1>シフト案作成・確定</h1><p class="lead">従業員の希望時間内で勤務を割り当て、月単位で確定します。確定後もこの画面で追加・編集・削除できます。</p></div><span class="shift-status shift-status--{{ status }}">{{ '確定済み' if status == 'confirmed' else '編集中' }}</span></section>
 <section class="panel filter-panel"><form method="get" class="inline-form"><div class="form-group inline-form__field"><label for="target_month">対象月</label><input id="target_month" name="target_month" type="month" value="{{ selected_month }}" required></div><button class="button button--primary" type="submit">表示する</button></form></section>
-{% if status == 'confirmed' %}<div class="flash flash--success section-block">この月のシフトは確定済みです。確定後のシフトは変更できません。休憩時間は確定時に保存した値です。</div>{% endif %}
-{% if status == 'draft' and values.get('employee_id') %}
+{% if status == 'confirmed' %}<div class="flash flash--success section-block">この月のシフトは確定済みです。確定を解除せずに追加・編集・削除できます。保存した変更は、従業員が画面を再読み込みすると最新のシフト・月次集計に反映されます。再確定は不要です。</div>{% endif %}
+{% if values.get('employee_id') %}
 <section class="panel section-block shift-editor" aria-labelledby="editor-title">
     <h2 id="editor-title">{{ 'シフトを編集' if edit_shift else '希望からシフトを追加' }}</h2>
-    {% if candidate_request %}<p>本人の希望時間：{{ candidate_request.start_time }}～{{ candidate_request.end_time }}</p>{% endif %}
+    {% if candidate_request %}<p>読み込み時の勤務日（{{ candidate_request.work_date }}）の本人の希望時間：{{ candidate_request.start_time }}～{{ candidate_request.end_time }}</p>{% endif %}
     <form method="post" class="form-stack">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save"><input type="hidden" name="target_month" value="{{ selected_month }}"><input type="hidden" name="shift_id" value="{{ values.get('shift_id', '') }}"><input type="hidden" name="employee_id" value="{{ values.get('employee_id', '') }}">
         <div class="shift-editor__identity"><div><span>従業員ID</span><strong class="employee-id">{{ values.get('employee_number', '') }}</strong></div><div><span>氏名</span><strong>{{ values.get('name', '') }}</strong></div></div>
-        <div class="form-group"><label for="work_date">勤務日</label><input id="work_date" name="work_date" type="date" value="{{ values.get('work_date', '') }}" readonly required></div>
+        <div class="form-group"><label for="work_date">勤務日</label><input id="work_date" name="work_date" type="date" value="{{ values.get('work_date', '') }}" min="{{ month_first_date }}" max="{{ month_last_date }}" {% if not edit_shift %}readonly {% endif %}required></div>
+        {% if edit_shift %}<p class="field-help">勤務日は対象月内で変更できます。変更先の日付に本人の出勤可能希望が必要です。その日の希望時間内で開始・終了時刻を指定してください。</p>{% endif %}
         <div class="time-fields">{{ time_select('start_time','開始時刻') }}{{ time_select('end_time','終了時刻') }}</div>
-        <p class="field-help">予定休憩時間は店舗共通ルールから自動適用します。保存後の一覧で予定実働時間を確認できます。日付をまたぐ勤務は登録できません。</p>
-        <div class="form-actions"><button class="button button--primary" type="submit">{{ '変更を保存' if edit_shift else 'シフト案へ追加' }}</button><a class="button button--outline" href="{{ url_for('admin.shifts', target_month=selected_month) }}">キャンセル</a></div>
+        {% if preview %}<p class="field-help">画面読み込み時の予定休憩：{{ preview.break_minutes }}分 ／ 予定実働：{{ preview.net_minutes|duration }}（{{ '保存済みの休憩時間' if preview_uses_snapshot else '現在の店舗ルールによる試算' }}）。勤務日・時刻の変更後は保存時に再計算します。</p>{% endif %}
+        <p class="field-help">{% if status == 'confirmed' %}確定済みシフトの勤務内容を変更しない場合は保存済みの休憩時間を維持します。追加・勤務内容の変更時は現在の店舗共通ルールを適用して休憩時間を保存します。{% else %}予定休憩時間は店舗共通ルールから自動適用します。{% endif %}保存後の一覧で予定実働時間を確認できます。日付をまたぐ勤務は登録できません。</p>
+        <div class="form-actions"><button class="button button--primary" type="submit">{{ '変更を保存' if edit_shift else 'シフトを追加' }}</button><a class="button button--outline" href="{{ url_for('admin.shifts', target_month=selected_month) }}">キャンセル</a></div>
     </form>
 </section>
 {% endif %}
-{% if status == 'draft' %}
-<section class="panel section-block" aria-labelledby="candidates-title"><div class="panel-heading"><div><h2 id="candidates-title">出勤可能な候補</h2><p>割り当てる従業員と日付を選択してください。</p></div></div>
+<section class="panel section-block" aria-labelledby="candidates-title"><div class="panel-heading"><div><h2 id="candidates-title">出勤可能な候補</h2><p>未割当：{{ shift_requests|length }}件。割り当てる従業員と日付を選択してください。</p></div></div>
 {% if shift_requests %}<div class="table-wrap"><table><thead><tr><th>日付</th><th>従業員ID</th><th>氏名</th><th>区分</th><th>希望時間</th><th>備考</th><th>操作</th></tr></thead><tbody>{% for item in shift_requests %}<tr><td>{{ item.work_date }}</td><td class="employee-id">{{ item.employee_number }}</td><td>{{ item.name }}</td><td>{{ item.employee_type }}</td><td>{{ item.start_time }}～{{ item.end_time }}</td><td class="note-cell">{{ item.note or '―' }}</td><td><a class="button button--outline button--small" href="{{ url_for('admin.shifts', target_month=selected_month, candidate_employee_id=item.employee_id, candidate_work_date=item.work_date) }}">割り当て</a></td></tr>{% endfor %}</tbody></table></div>
-{% else %}<div class="empty-state">この月に登録された出勤可能希望はありません。</div>{% endif %}</section>
-{% endif %}
+{% else %}<div class="empty-state">未割当の候補はありません。</div>{% endif %}</section>
 <section class="panel section-block" aria-labelledby="shifts-title"><div class="panel-heading"><div><h2 id="shifts-title">{{ selected_month }}のシフト</h2><p>{{ shifts|length }}件</p></div></div>
-{% if shifts %}<div class="table-wrap"><table><thead><tr><th>日付</th><th>従業員ID</th><th>氏名</th><th>区分</th><th>開始</th><th>終了</th><th>予定休憩</th><th>予定実働</th>{% if status == 'draft' %}<th>操作</th>{% endif %}</tr></thead><tbody>
+{% if shifts %}<div class="table-wrap"><table><thead><tr><th>日付</th><th>従業員ID</th><th>氏名</th><th>区分</th><th>開始</th><th>終了</th><th>予定休憩</th><th>予定実働</th><th>操作</th></tr></thead><tbody>
 {% for shift in shifts %}<tr><td>{{ shift.work_date }}</td><td class="employee-id">{{ shift.employee_number }}</td><td>{{ shift.name }}</td><td>{{ shift.employee_type }}</td><td>{{ shift.start_time }}</td><td>{{ shift.end_time }}</td><td>{{ shift.break_minutes }}分</td><td>{{ shift.net_minutes|duration }}</td>
-{% if status == 'draft' %}<td><div class="table-actions"><a class="button button--outline button--small" href="{{ url_for('admin.shifts', target_month=selected_month, edit=shift.shift_id) }}">編集</a><form method="post" data-confirm="このシフト案を削除しますか？"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="target_month" value="{{ selected_month }}"><input type="hidden" name="shift_id" value="{{ shift.shift_id }}"><button class="button button--danger button--small" type="submit">削除</button></form></div></td>{% endif %}</tr>{% endfor %}
-</tbody></table></div>{% else %}<div class="empty-state">この月のシフト案はまだありません。</div>{% endif %}
-{% if status == 'draft' %}<p class="section-note">予定休憩・実働は現在の店舗ルールによる試算です。確定時のルールを再確認して保存します。</p>{% endif %}</section>
+<td><div class="table-actions"><a class="button button--outline button--small" href="{{ url_for('admin.shifts', target_month=selected_month, edit=shift.shift_id) }}">編集</a><form method="post" data-confirm="このシフトを削除しますか？"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="target_month" value="{{ selected_month }}"><input type="hidden" name="shift_id" value="{{ shift.shift_id }}"><button class="button button--danger button--small" type="submit">削除</button></form></div></td></tr>{% endfor %}
+</tbody></table></div>{% else %}<div class="empty-state">この月のシフトはありません。</div>{% endif %}
+{% if status == 'draft' %}<p class="section-note">予定休憩・実働は現在の店舗ルールによる試算です。確定時のルールを再確認して保存します。</p>{% else %}<p class="section-note">予定休憩・実働は各シフトに保存された休憩時間に基づきます。店舗設定の変更だけでは変わりません。追加・勤務内容の変更時は現在のルールを適用します。</p>{% endif %}</section>
 {% if status == 'draft' and shifts %}
-<section class="confirm-panel section-block"><h2>この月のシフトを確定</h2><p>確定後は従業員が閲覧できるようになり、この月のシフトは編集できません。確定時の予定休憩時間も保存されます。</p>
+<section class="confirm-panel section-block"><h2>この月のシフトを確定</h2><p>確定後は従業員が閲覧できるようになり、確定時の予定休憩時間も保存されます。確定後の追加・編集・削除は従業員の最新表示にも反映されます。</p>
 <form method="post" class="form-stack"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="confirm"><input type="hidden" name="target_month" value="{{ selected_month }}"><label class="confirm-check"><input type="checkbox" name="confirm_ack" value="yes" required><span>{{ selected_month }}の勤務・予定休憩時間を確認し、シフトを確定します。</span></label><button class="button button--confirm" type="submit">この月のシフトを確定する</button></form></section>
 {% endif %}
 {% endblock %}

@@ -1,5 +1,7 @@
 """希望内のシフト作成・確定と、本人勤務集計の公開範囲。"""
 
+import re
+
 import pytest
 
 from database import get_db
@@ -14,6 +16,28 @@ from tests.web_helpers import (
 def _shifts(app):
     with app.app_context():
         return [dict(row) for row in get_db().execute("SELECT * FROM shifts ORDER BY shift_id")]
+
+
+def _month(app):
+    with app.app_context():
+        return dict(get_db().execute(
+            "SELECT * FROM shift_months WHERE target_month = ?", (TARGET_MONTH,)
+        ).fetchone())
+
+
+def _published_view(app, employee_client, **query):
+    suffix = "".join(f"&{key}={value}" for key, value in query.items())
+    with rendered_templates(app) as rendered:
+        response = employee_client.get(f"/employee/confirmed-shifts?target_month={TARGET_MONTH}{suffix}")
+    assert response.status_code == 200
+    return response.get_data(as_text=True), rendered[-1][1]
+
+
+def _assert_summary(summary, gross, rest, net, overtime, income):
+    assert summary["is_confirmed"] is True
+    assert tuple(summary[key] for key in (
+        "gross_minutes", "break_minutes", "net_minutes", "overtime_minutes", "expected_income",
+    )) == (gross, rest, net, overtime, income)
 
 
 def _prepare(app, client, **kwargs):
@@ -101,16 +125,209 @@ def test_confirmation_saves_timestamp_and_break_snapshot_that_does_not_change(we
     assert rendered[-1][1]["summary"] == original_summary
 
 
-def test_confirmed_month_rejects_add_edit_and_delete(web_app, client):
+def test_admin_confirmed_crud_after_deadline_updates_employee_list_and_own_summary(web_app, client):
+    employee_id, employee_client = _prepare(web_app, client, name="更新本人", end="21:00")
+    other_id, _ = prepare_employee_with_request(
+        web_app, client, name="変更しない別人", hourly_rate="1999", end="21:00",
+    )
+    assert redirect_path(save_request(employee_client, work_date="2099-08-04", end="21:00")) == "/employee/shift-requests"
+    assert redirect_path(save_shift(client, employee_id, end="21:00")) == "/admin/shifts"
+    assert redirect_path(save_shift(client, other_id, end="21:00")) == "/admin/shifts"
+    assert redirect_path(confirm_month(client)) == "/admin/shifts"
+    original_month = _month(web_app)
+    original, untouched = _shifts(web_app)
+    body, context = _published_view(web_app, employee_client)
+    assert len(context["shifts"]) == 2
+    _assert_summary(context["summary"], 720, 60, 660, 180, 15040)
+    assert "変更しない別人" in body
+
+    set_deadline(client, deadline_date="2000-07-31")
+    assert redirect_path(post(client, "/admin/break-settings", {**DEFAULT_RULES, "gt8": 90})) == "/admin/break-settings"
+    admin_page = client.get(f"/admin/shifts?target_month={TARGET_MONTH}").get_data(as_text=True)
+    assert "割り当て" in admin_page and "編集" in admin_page and "削除" in admin_page
+    assert 'name="confirm_ack"' not in admin_page
+    assert redirect_path(save_shift(
+        client, employee_id, shift_id=original["shift_id"], start="10:00", end="21:00",
+    )) == "/admin/shifts"
+    edited, still_untouched = _shifts(web_app)
+    assert edited["break_minutes"] == 90
+    assert still_untouched == untouched
+    body, context = _published_view(web_app, employee_client, employee_id=other_id)
+    assert len(context["shifts"]) == 2
+    assert any(row["start_time"] == "10:00" and row["employee_id"] == employee_id for row in context["shifts"])
+    _assert_summary(context["summary"], 660, 90, 570, 90, 12640)
+    assert "12,640" in body
+    assert "1,999" not in body and "23,488" not in body
+
+    assert redirect_path(save_shift(client, employee_id, work_date="2099-08-04", end="21:00")) == "/admin/shifts"
+    added = _shifts(web_app)[-1]
+    assert added["break_minutes"] == 90
+    body, context = _published_view(web_app, employee_client)
+    assert len(context["shifts"]) == 3 and "2099-08-04" in body
+    _assert_summary(context["summary"], 1380, 180, 1200, 240, 26880)
+    assert [day["break_minutes"] for day in context["summary"]["days"]] == [90, 90]
+    assert redirect_path(post(client, "/admin/shifts", {
+        "action": "delete", "target_month": TARGET_MONTH, "shift_id": original["shift_id"],
+    })) == "/admin/shifts"
+    _, context = _published_view(web_app, employee_client)
+    assert {(row["employee_id"], row["work_date"]) for row in context["shifts"]} == {
+        (other_id, WORK_DATE), (employee_id, "2099-08-04"),
+    }
+    _assert_summary(context["summary"], 720, 90, 630, 150, 14240)
+    assert _shifts(web_app)[0] == untouched
+    month = _month(web_app)
+    assert month["status"] == "confirmed"
+    assert month["confirmed_at"] == original_month["confirmed_at"]
+    assert confirm_month(client).status_code == 200
+    assert _month(web_app) == month
+    for row in context["shifts"]:
+        assert not {"hourly_rate", "effective_hourly_rate", "expected_income", "note"}.intersection(row)
+
+
+def test_unchanged_confirmed_save_and_edit_preview_keep_saved_break_snapshot(web_app, client):
+    employee_id, employee_client = _prepare(web_app, client, end="21:00")
+    assert redirect_path(save_shift(client, employee_id, end="21:00")) == "/admin/shifts"
+    assert redirect_path(confirm_month(client)) == "/admin/shifts"
+    assert redirect_path(post(client, "/admin/break-settings", {**DEFAULT_RULES, "gt8": 90})) == "/admin/break-settings"
+    shifts_before, month_before = _shifts(web_app), _month(web_app)
+    shift_id = shifts_before[0]["shift_id"]
+    with rendered_templates(web_app) as rendered:
+        response = client.get(f"/admin/shifts?target_month={TARGET_MONTH}&edit={shift_id}")
+    assert response.status_code == 200
+    assert rendered[-1][1]["preview"]["break_minutes"] == 60
+    assert "変更を保存" in response.get_data(as_text=True)
+    assert redirect_path(save_shift(client, employee_id, shift_id=shift_id, end="21:00")) == "/admin/shifts"
+    assert _shifts(web_app) == shifts_before
+    assert _month(web_app) == month_before
+    _, context = _published_view(web_app, employee_client)
+    _assert_summary(context["summary"], 720, 60, 660, 180, 15040)
+
+
+@pytest.mark.parametrize("change_employee,change_date", [(False, True), (True, False), (True, True)])
+def test_confirmed_employee_and_date_reassignment_is_published_without_reconfirming(
+    web_app, client, change_employee, change_date,
+):
+    employee_id, employee_client = _prepare(web_app, client, end="21:00")
+    other_id, other_client = prepare_employee_with_request(web_app, client, name="移動先", end="21:00")
+    for browser in (employee_client, other_client):
+        assert redirect_path(save_request(browser, work_date="2099-08-04", end="21:00")) == "/employee/shift-requests"
+    assert redirect_path(save_shift(client, employee_id, end="21:00")) == "/admin/shifts"
+    assert redirect_path(confirm_month(client)) == "/admin/shifts"
+    original_month = _month(web_app)
+    shift_id = _shifts(web_app)[0]["shift_id"]
+    edit_response = client.get(f"/admin/shifts?target_month={TARGET_MONTH}&edit={shift_id}")
+    assert edit_response.status_code == 200
+    date_input = re.search(r'<input\b[^>]*\bname="work_date"[^>]*>', edit_response.get_data(as_text=True))
+    assert date_input is not None and "readonly" not in date_input.group(0)
+    assert redirect_path(post(client, "/admin/break-settings", {**DEFAULT_RULES, "gt8": 90})) == "/admin/break-settings"
+    new_employee = other_id if change_employee else employee_id
+    new_date = "2099-08-04" if change_date else WORK_DATE
+    assert redirect_path(save_shift(
+        client, new_employee, work_date=new_date, shift_id=shift_id, end="21:00",
+    )) == "/admin/shifts"
+    row = _shifts(web_app)[0]
+    assert (row["employee_id"], row["work_date"], row["break_minutes"]) == (new_employee, new_date, 90)
+    for owner_id, browser in ((employee_id, employee_client), (other_id, other_client)):
+        _, context = _published_view(web_app, browser)
+        assert len(context["shifts"]) == 1
+        assert context["shifts"][0]["employee_id"] == new_employee
+        assert context["shifts"][0]["work_date"] == new_date
+        if owner_id == new_employee:
+            _assert_summary(context["summary"], 720, 90, 630, 150, 14240)
+        else:
+            _assert_summary(context["summary"], 0, 0, 0, 0, 0)
+            assert context["summary"]["days"] == []
+    assert _month(web_app)["status"] == "confirmed"
+    assert _month(web_app)["confirmed_at"] == original_month["confirmed_at"]
+
+
+def test_deleting_last_confirmed_shift_leaves_empty_published_month_with_zero_totals(web_app, client):
+    employee_id, employee_client = _prepare(web_app, client, end="21:00")
+    assert redirect_path(save_shift(client, employee_id, end="21:00")) == "/admin/shifts"
+    assert redirect_path(confirm_month(client)) == "/admin/shifts"
+    original_month = _month(web_app)
+    assert redirect_path(post(client, "/admin/shifts", {
+        "action": "delete", "target_month": TARGET_MONTH, "shift_id": _shifts(web_app)[0]["shift_id"],
+    })) == "/admin/shifts"
+    body, context = _published_view(web_app, employee_client)
+    assert context["is_confirmed"] is True and context["shifts"] == []
+    assert context["summary"]["days"] == []
+    _assert_summary(context["summary"], 0, 0, 0, 0, 0)
+    assert "確定済みの勤務はありません" in body
+    assert "まだ確定していません" not in body
+    assert _month(web_app)["status"] == "confirmed"
+    assert _month(web_app)["confirmed_at"] == original_month["confirmed_at"]
+
+
+@pytest.mark.parametrize("action,case", [
+    ("save", "missing_request"), ("save", "outside_request"),
+    ("save", "invalid_step"), ("save", "duplicate"),
+    ("save", "cross_month"), ("delete", "cross_month"),
+    ("save", "add_missing_request"), ("save", "add_duplicate"),
+    ("save", "retired_employee"),
+])
+def test_invalid_confirmed_web_mutations_leave_rows_snapshots_and_month_unchanged(web_app, client, action, case):
+    employee_id, employee_client = _prepare(web_app, client, end="21:00")
+    assert redirect_path(save_request(employee_client, work_date="2099-08-04", end="21:00")) == "/employee/shift-requests"
+    assert redirect_path(save_shift(client, employee_id, end="21:00")) == "/admin/shifts"
+    assert redirect_path(save_shift(client, employee_id, work_date="2099-08-04", end="21:00")) == "/admin/shifts"
+    assert redirect_path(confirm_month(client)) == "/admin/shifts"
+    assert redirect_path(post(client, "/admin/break-settings", {**DEFAULT_RULES, "gt8": 90})) == "/admin/break-settings"
+    if case == "retired_employee":
+        with web_app.app_context():
+            db = get_db()
+            db.execute(
+                "UPDATE employees SET employment_status = 'retired', retired_at = '2000-01-01T00:00:00+09:00' WHERE employee_id = ?",
+                (employee_id,),
+            )
+            db.commit()
+    shifts_before, month_before = _shifts(web_app), _month(web_app)
+    values = {
+        "action": action, "target_month": TARGET_MONTH, "shift_id": shifts_before[0]["shift_id"],
+        "employee_id": employee_id, "work_date": WORK_DATE, "start_time": "09:00", "end_time": "21:00",
+    }
+    if case in {"missing_request", "add_missing_request"}:
+        values["work_date"] = "2099-08-05"
+    elif case == "outside_request":
+        values["start_time"] = "08:30"
+    elif case == "invalid_step":
+        values["start_time"] = "09:15"
+    elif case == "duplicate":
+        values["work_date"] = "2099-08-04"
+    elif case in {"add_duplicate", "retired_employee"}:
+        pass
+    elif action == "delete":
+        values["target_month"] = "2099-09"
+    else:
+        values["work_date"] = "2099-09-03"
+    if case.startswith("add_"):
+        values["shift_id"] = ""
+    response = post(client, "/admin/shifts", values)
+    assert response.status_code == 200
+    assert _shifts(web_app) == shifts_before
+    assert _month(web_app) == month_before
+
+
+def test_confirmed_mutations_still_require_admin_role_and_valid_csrf(web_app, client):
     employee_id, employee_client = _prepare(web_app, client)
-    assert redirect_path(save_request(employee_client, work_date="2099-08-04")) == "/employee/shift-requests"
     assert redirect_path(save_shift(client, employee_id)) == "/admin/shifts"
     assert redirect_path(confirm_month(client)) == "/admin/shifts"
-    original = _shifts(web_app)
-    assert save_shift(client, employee_id, work_date="2099-08-04").status_code == 200
-    assert save_shift(client, employee_id, shift_id=original[0]["shift_id"], start="10:00").status_code == 200
-    assert post(client, "/admin/shifts", {"action": "delete", "target_month": TARGET_MONTH, "shift_id": original[0]["shift_id"]}).status_code == 200
-    assert _shifts(web_app) == original
+    shifts_before, month_before = _shifts(web_app), _month(web_app)
+    for action in ("save", "delete", "confirm"):
+        values = {
+            "action": action, "target_month": TARGET_MONTH, "shift_id": shifts_before[0]["shift_id"],
+            "employee_id": employee_id, "work_date": WORK_DATE,
+            "start_time": "10:00", "end_time": "17:00", "confirm_ack": "yes",
+        }
+        response = post(employee_client, "/admin/shifts", values, page="/employee/home")
+        assert redirect_path(response) == "/employee/home"
+        for token in (None, "invalid-token"):
+            payload = dict(values)
+            if token is not None:
+                payload["csrf_token"] = token
+            assert client.post("/admin/shifts", data=payload).status_code == 400
+    assert _shifts(web_app) == shifts_before
+    assert _month(web_app) == month_before
 
 
 def test_draft_is_not_published_and_income_summary_is_not_rendered(web_app, client):

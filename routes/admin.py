@@ -1,5 +1,6 @@
 """管理者の従業員・店舗設定・シフト管理画面。DBアクセスはリポジトリ経由。"""
 
+from calendar import monthrange
 from datetime import datetime
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
@@ -304,6 +305,7 @@ def shift_requests():
 
 
 def _candidate(employee_id, work_date, target_month):
+    # 編集時は割当済みでも本人の希望を参照する。未割当一覧の絞り込みとは分離する。
     for row in shift_request_repository.list_shift_requests_by_month(target_month):
         if row["employee_id"] == employee_id and row["work_date"] == work_date and row["employment_status"] == "active":
             return display_employee(row)
@@ -329,12 +331,13 @@ def _with_work(row, is_confirmed=False):
 
 
 def _render_shifts(target_month, form_data=None):
+    year, month_number = map(int, target_month.split("-"))
+    last_day = monthrange(year, month_number)[1]
     month = shift_repository.get_shift_month(target_month)
     status = month["status"] if month is not None else "draft"
     candidates = [
         display_employee(row)
-        for row in shift_request_repository.list_shift_requests_by_month(target_month)
-        if row["employment_status"] == "active"
+        for row in shift_request_service.list_unassigned_candidates_by_month(target_month)
     ]
     selected = None
     editing = None
@@ -347,9 +350,14 @@ def _render_shifts(target_month, form_data=None):
             elif request.args.get("candidate_employee_id"):
                 employee_id = positive_id(request.args["candidate_employee_id"], "従業員ID")
                 work_date = work_date_in_month(request.args.get("candidate_work_date", ""), target_month)
-                selected = _candidate(employee_id, work_date, target_month)
+                # 古いタブのリンクから、割当済みの候補を再び選択することも防ぐ。
+                selected = next(
+                    (row for row in candidates
+                     if row["employee_id"] == employee_id and row["work_date"] == work_date),
+                    None,
+                )
                 if selected is None:
-                    raise NotFoundError("指定された希望シフト候補が見つかりません。")
+                    raise NotFoundError("指定された候補は割り当て済みか、利用できません。")
                 form_data = dict(selected)
         except FORM_ERRORS as error:
             flash(str(error), "error")
@@ -369,17 +377,32 @@ def _render_shifts(target_month, form_data=None):
         except FORM_ERRORS:
             pass
     preview = None
+    preview_uses_snapshot = False
     if form_data.get("start_time") and form_data.get("end_time"):
         try:
-            preview = break_service.calculate_work(form_data["start_time"], form_data["end_time"])
+            preview_uses_snapshot = (
+                status == "confirmed"
+                and editing is not None
+                and positive_id(str(form_data.get("employee_id", "")), "従業員ID") == editing["employee_id"]
+                and all(
+                    form_data.get(key) == editing[key]
+                    for key in ("work_date", "start_time", "end_time")
+                )
+            )
+            if preview_uses_snapshot:
+                preview = _with_work(editing, is_confirmed=True)
+            else:
+                preview = break_service.calculate_work(form_data["start_time"], form_data["end_time"])
         except FORM_ERRORS:
             pass
     return render_template(
         "admin/shifts.html", selected_month=target_month, month_status=status,
+        month_first_date=f"{target_month}-01", month_last_date=f"{target_month}-{last_day:02d}",
         confirmed_at=month["confirmed_at"] if month is not None else None,
         shifts=[_with_work(row, status == "confirmed") for row in shift_service.list_month_shifts(target_month)],
         shift_requests=candidates, form_data=form_data, edit_shift=editing,
         candidate_request=selected_request, preview=preview,
+        preview_uses_snapshot=preview_uses_snapshot,
     )
 
 
@@ -409,13 +432,10 @@ def shifts():
                 shift_service.confirm_month(target_month)
                 flash("この月のシフトを確定しました。", "success")
                 return redirect(url_for("admin.shifts", target_month=target_month))
-            month = shift_repository.get_shift_month(target_month)
-            if month is not None and month["status"] == "confirmed":
-                raise BusinessRuleError("確定済みのシフトは編集できません。")
             if action == "delete":
                 shift_id = positive_id(values["shift_id"], "シフトID")
                 _shift_for_month(shift_id, target_month)
-                shift_service.delete_draft_shift(shift_id)
+                shift_service.delete_shift(shift_id)
                 message = "シフトを削除しました。"
             elif action == "save":
                 employee_id = positive_id(values["employee_id"], "従業員ID")
@@ -423,12 +443,12 @@ def shifts():
                 if values["shift_id"]:
                     shift_id = positive_id(values["shift_id"], "シフトID")
                     _shift_for_month(shift_id, target_month)
-                    shift_service.edit_draft_shift(shift_id, employee_id, values["work_date"], values["start_time"], values["end_time"])
+                    shift_service.edit_shift(shift_id, employee_id, values["work_date"], values["start_time"], values["end_time"])
                     message = "シフトを更新しました。"
                 else:
                     if _candidate(employee_id, values["work_date"], target_month) is None:
                         raise BusinessRuleError("本人の希望シフトがある従業員だけ追加できます。")
-                    shift_service.add_draft_shift(employee_id, values["work_date"], values["start_time"], values["end_time"])
+                    shift_service.add_shift(employee_id, values["work_date"], values["start_time"], values["end_time"])
                     message = "シフトを追加しました。"
             else:
                 raise ValidationError("操作を確認できません。")

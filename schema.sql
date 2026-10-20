@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS shifts (
         length(end_time) = 5 AND end_time GLOB '[0-2][0-9]:[03]0'
         AND substr(end_time, 1, 2) BETWEEN '00' AND '23'
         AND substr(end_time, 4, 2) IN ('00', '30')),
-    -- draftでは未確定。confirmedへの遷移時に店舗ルールを分単位で固定する。
+    -- draftでは未確定。確定時と確定後の追加・編集時に店舗ルールを分単位で保存する。
     break_minutes INTEGER CHECK (break_minutes IS NULL OR (
         typeof(break_minutes) = 'integer' AND break_minutes >= 0
         AND break_minutes < ((CAST(substr(end_time, 1, 2) AS INTEGER) * 60 + CAST(substr(end_time, 4, 2) AS INTEGER))
@@ -180,21 +180,22 @@ BEFORE UPDATE OF shift_month_id, work_date ON shifts FOR EACH ROW
 WHEN (SELECT target_month FROM shift_months WHERE shift_month_id = NEW.shift_month_id) <> substr(NEW.work_date, 1, 7)
 BEGIN SELECT RAISE(ABORT, 'shift work_date must match shift month'); END;
 
-CREATE TRIGGER IF NOT EXISTS reject_insert_into_confirmed_month
+CREATE TRIGGER IF NOT EXISTS require_confirmed_shift_break_on_insert
 BEFORE INSERT ON shifts FOR EACH ROW
 WHEN (SELECT status FROM shift_months WHERE shift_month_id = NEW.shift_month_id) = 'confirmed'
-BEGIN SELECT RAISE(ABORT, 'confirmed shifts are immutable'); END;
+    AND NEW.break_minutes IS NULL
+BEGIN SELECT RAISE(ABORT, 'confirmed shifts require break snapshots'); END;
 
-CREATE TRIGGER IF NOT EXISTS reject_update_of_confirmed_shift
+CREATE TRIGGER IF NOT EXISTS require_confirmed_shift_break_on_update
 BEFORE UPDATE ON shifts FOR EACH ROW
-WHEN (SELECT status FROM shift_months WHERE shift_month_id = OLD.shift_month_id) = 'confirmed'
-    OR (SELECT status FROM shift_months WHERE shift_month_id = NEW.shift_month_id) = 'confirmed'
-BEGIN SELECT RAISE(ABORT, 'confirmed shifts are immutable'); END;
+WHEN (SELECT status FROM shift_months WHERE shift_month_id = NEW.shift_month_id) = 'confirmed'
+    AND NEW.break_minutes IS NULL
+BEGIN SELECT RAISE(ABORT, 'confirmed shifts require break snapshots'); END;
 
-CREATE TRIGGER IF NOT EXISTS reject_delete_of_confirmed_shift
-BEFORE DELETE ON shifts FOR EACH ROW
-WHEN (SELECT status FROM shift_months WHERE shift_month_id = OLD.shift_month_id) = 'confirmed'
-BEGIN SELECT RAISE(ABORT, 'confirmed shifts are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS reject_shift_month_change
+BEFORE UPDATE OF shift_month_id ON shifts FOR EACH ROW
+WHEN NEW.shift_month_id <> OLD.shift_month_id
+BEGIN SELECT RAISE(ABORT, 'shift month identifiers are immutable'); END;
 
 CREATE TRIGGER IF NOT EXISTS validate_month_confirmation
 BEFORE UPDATE OF status ON shift_months FOR EACH ROW
@@ -228,5 +229,5 @@ INSERT INTO break_rules (category, break_minutes) VALUES
     ('lt6', 0), ('eq6', 45), ('gt6_lt8', 45), ('eq8', 60), ('gt8', 60)
 ON CONFLICT(category) DO NOTHING;
 
--- アプリの製品バージョンはV4。内部DB構造だけを5へ更新する。
-PRAGMA user_version = 5;
+-- アプリの製品バージョンはV4。内部DB構造だけを6へ更新する。
+PRAGMA user_version = 6;

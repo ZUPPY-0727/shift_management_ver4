@@ -56,7 +56,7 @@ def create_admin_command(username):
 @click.command("migrate-db")
 @with_appcontext
 def migrate_db_command():
-    """既存V4をバックアップし、認証列と一回限りの確認管理を追加する。"""
+    """既存V4をバックアップし、データを保持したまま内部構造を更新する。"""
     try:
         backup = migrate_db()
     except (DatabaseSetupError, sqlite3.Error, OSError) as error:
@@ -66,7 +66,6 @@ def migrate_db_command():
     else:
         click.echo("V4のDB構造を更新しました。従業員・希望・シフト・設定は保持しています。")
         click.echo(f"更新前バックアップ: {backup}")
-        click.echo("既存の従業員セッションは再ログインが必要です。")
 
 
 def init_app(app):
